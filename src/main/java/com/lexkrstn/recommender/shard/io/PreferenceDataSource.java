@@ -1,4 +1,6 @@
-package com.lexkrstn.recommender.shard;
+package com.lexkrstn.recommender.shard.io;
+
+import com.lexkrstn.recommender.shard.models.PreferenceSet;
 
 import java.io.IOException;
 import java.util.List;
@@ -33,10 +35,12 @@ public interface PreferenceDataSource extends AutoCloseable {
     /**
      * Tries to rewrite the preference set without extending the file.
      *
-     * @param preferenceSet New preference set object.
+     * @param originalPreferenceSet The unmodified preference set from the source.
+     * @param newPreferenceSet The preference set after modification.
      * @return A boolean value indicating whether the try was successful.
      */
-    boolean tryQuickRewrite(PreferenceSet preferenceSet) throws IOException;
+    boolean tryQuickRewrite(PreferenceSet originalPreferenceSet,
+                            PreferenceSet newPreferenceSet) throws IOException;
 
     /**
      * Performs the preference sets shrinking the file.

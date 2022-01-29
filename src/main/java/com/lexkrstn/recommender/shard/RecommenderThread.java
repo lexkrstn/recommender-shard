@@ -1,26 +1,30 @@
 package com.lexkrstn.recommender.shard;
 
+import com.lexkrstn.recommender.shard.io.PreferenceChangeBulk;
+import com.lexkrstn.recommender.shard.io.PreferenceDataSource;
+import com.lexkrstn.recommender.shard.models.Preference;
+import com.lexkrstn.recommender.shard.models.Recommendation;
 import com.lexkrstn.recommender.shard.tasks.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.annotation.PreDestroy;
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Future;
 import java.util.stream.Collectors;
 
+/**
+ * The background process that runs recommendation and preference tasks.
+ */
 public class RecommenderThread extends Thread {
     private final Logger log = LoggerFactory.getLogger(RecommenderThread.class);
 
     private final PreferenceDataSource dataSource;
     private final int maxRecommendTasks;
     private final PreferenceChangeBulk changeBulk;
-    private List<RecommenderTask> tasks = new LinkedList<>();
+    private final List<RecommenderTask> tasks = new LinkedList<>();
     private LinkedList<RecommenderTask> takenTasks = new LinkedList<>();
     private boolean shouldQuit = false;
 
@@ -100,46 +104,67 @@ public class RecommenderThread extends Thread {
         return true;
     }
 
+    /**
+     * Adds a recommendation task.
+     *
+     * @param ownerId To whom to recommend.
+     * @return Recommendation list or null if no preference set with such ownerId found.
+     */
     public synchronized Future<List<Recommendation>> recommend(long ownerId) {
         CompletableFuture<List<Recommendation>> future = new CompletableFuture<>();
         var task = new RecommendTask(ownerId);
-        task.setCompletionListener(() -> {
-            future.complete(task.getRecommendationList());
-        });
+        task.setCompletionListener(() -> future.complete(task.getRecommendationList()));
         tasks.add(task);
         notifyAll();
         return future;
     }
 
-    public synchronized Future<Preference> addPreference(Preference preference) {
-        CompletableFuture<Preference> future = new CompletableFuture<>();
+    /**
+     * Adds a preference addition task.
+     *
+     * @param preference The preference that encapsulates owner and entity id.
+     * @return A boolean value indicating whether the new preference has been
+     *         added. It's false only if the preference already exists in db.
+     */
+    public synchronized Future<Boolean> addPreference(Preference preference) {
+        CompletableFuture<Boolean> future = new CompletableFuture<>();
         var task = new PreferTask(preference, changeBulk);
-        task.setCompletionListener(() -> {
-            future.complete(task.getPreference());
-        });
+        task.setCompletionListener(() -> future.complete(task.hasAdded()));
         tasks.add(task);
         notifyAll();
         return future;
     }
 
+    /**
+     * Adds a preference addition task.
+     *
+     * @param preference The preference that encapsulates owner and entity id.
+     * @return A boolean value indicating whether the new preference has been
+     *         added. It's false only if the preference already exists in db.
+     */
     public synchronized Future<Boolean> removePreference(Preference preference) {
         CompletableFuture<Boolean> future = new CompletableFuture<>();
         var task = new UnpreferTask(preference, changeBulk);
-        task.setCompletionListener(() -> {
-            future.complete(task.hasAffected());
-        });
+        task.setCompletionListener(() -> future.complete(task.hasAffected()));
         tasks.add(task);
         notifyAll();
         return future;
     }
 
+    /**
+     * Adds a preference listing task.
+     *
+     * @param ownerId The preference owner's id.
+     * @return List of preference entity IDs or null if no preference set with
+     *         such ownerId found..
+     */
     public synchronized Future<List<Long>> getPreferences(long ownerId) {
         CompletableFuture<List<Long>> future = new CompletableFuture<>();
         var task = new GetPreferencesTask(ownerId);
         task.setCompletionListener(() -> {
             var preferenceSet = task.getPreferenceSet();
             List<Long> ids = preferenceSet != null
-                    ? Arrays.stream(preferenceSet.getEntityIds()).boxed().toList()
+                    ? preferenceSet.getEntityIds().stream().toList()
                     : null;
             future.complete(ids);
         });

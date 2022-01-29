@@ -1,9 +1,8 @@
 package com.lexkrstn.recommender.shard.tasks;
 
-import com.lexkrstn.recommender.shard.PreferenceSet;
-import com.lexkrstn.recommender.shard.Recommendation;
+import com.lexkrstn.recommender.shard.models.PreferenceSet;
+import com.lexkrstn.recommender.shard.models.Recommendation;
 
-import java.util.ArrayList;
 import java.util.List;
 
 public class RecommendTask extends RecommenderTask {

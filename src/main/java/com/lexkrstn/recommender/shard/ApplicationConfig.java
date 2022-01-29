@@ -1,5 +1,6 @@
 package com.lexkrstn.recommender.shard;
 
+import com.lexkrstn.recommender.shard.io.PreferenceFile;
 import lombok.Getter;
 import lombok.Setter;
 import org.slf4j.Logger;

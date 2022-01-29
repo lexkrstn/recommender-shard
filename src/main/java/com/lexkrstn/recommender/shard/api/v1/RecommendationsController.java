@@ -1,6 +1,8 @@
 package com.lexkrstn.recommender.shard.api.v1;
 
-import com.lexkrstn.recommender.shard.Recommendation;
+import com.lexkrstn.recommender.shard.errors.InternalServerError;
+import com.lexkrstn.recommender.shard.errors.NotFoundException;
+import com.lexkrstn.recommender.shard.models.Recommendation;
 import com.lexkrstn.recommender.shard.RecommenderThread;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

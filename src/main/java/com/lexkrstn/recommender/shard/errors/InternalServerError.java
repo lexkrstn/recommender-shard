@@ -1,4 +1,4 @@
-package com.lexkrstn.recommender.shard.api.v1;
+package com.lexkrstn.recommender.shard.errors;
 
 public class InternalServerError extends RuntimeException {
     public InternalServerError(String message) {

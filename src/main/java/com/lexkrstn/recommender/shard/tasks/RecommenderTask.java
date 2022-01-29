@@ -1,9 +1,6 @@
 package com.lexkrstn.recommender.shard.tasks;
 
-import com.lexkrstn.recommender.shard.PreferenceSet;
-
-import java.io.IOError;
-import java.io.IOException;
+import com.lexkrstn.recommender.shard.models.PreferenceSet;
 
 /**
  * Abstract task of the RecommenderThread.

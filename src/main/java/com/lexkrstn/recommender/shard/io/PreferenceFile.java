@@ -1,14 +1,12 @@
-package com.lexkrstn.recommender.shard;
+package com.lexkrstn.recommender.shard.io;
 
+import com.lexkrstn.recommender.shard.models.PreferenceSet;
 import lombok.Data;
 
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.RandomAccessFile;
-import java.util.Arrays;
-import java.util.Comparator;
-import java.util.LinkedList;
-import java.util.List;
+import java.util.*;
 
 
 /**
@@ -16,24 +14,45 @@ import java.util.List;
  */
 public class PreferenceFile implements PreferenceDataSource {
     /**
-     * File header.
+     * File header descriptor.
      */
     @Data
     private static class Header {
+        /**
+         * File prefix "PREF".
+         */
         public static final byte[] PREFIX = { 0x50, 0x52, 0x45, 0x46 };
-        public static final int SIZE = PREFIX.length + 8 * 3;
+        /**
+         * Header size in bytes.
+         */
+        public static final int SIZE = PREFIX.length + 1 + 8 * 4;
+        /**
+         * Current file structure version.
+         */
+        public static final byte VERSION = 1;
+        /**
+         * File structure version.
+         */
+        private byte version;
+        /**
+         * Last file change time.
+         */
         private long changeTimeMillis;
         private long preferenceSetCount;
         private long preferenceCount;
+        private long dataSize;
     }
 
+    /**
+     * Path to the file.
+     */
     private final String filePath;
+    private final int minCapacity = 2;
     private final RandomAccessFile file;
     private final Header header = new Header();
     private final LinkedList<PreferenceSet> lastPreferenceSets = new LinkedList<>();
     private final long maxLastPreferenceSets = 100;
     private final byte[] moveBuffer = new byte[10240];
-    private long offset = 0;
     private long preferenceSetIndex = -1;
 
     /**
@@ -52,8 +71,18 @@ public class PreferenceFile implements PreferenceDataSource {
         }
     }
 
-    private static long getPreferenceSetSize(int entityIdsCapacity) {
-        return 8L * (entityIdsCapacity + 1L) + 4L * 2L;
+    /**
+     * Returns the size (in bytes) of the preference set stored in the file.
+     */
+    private static long getPreferenceSetSize(PreferenceSet preferenceSet) {
+        return 8L * (preferenceSet.getCapacity() + 1L) + 4L * 2L;
+    }
+
+    /**
+     * Calculates new capacity of a preference set.
+     */
+    private int getNewCapacity(PreferenceSet preferenceSet) {
+        return minCapacity * (preferenceSet.getEntityCount() / minCapacity) + minCapacity;
     }
 
     private void readHeader() throws IOException {
@@ -64,37 +93,42 @@ public class PreferenceFile implements PreferenceDataSource {
             throw new IOException("The file " + filePath + " is not a valid preference file");
         }
 
+        header.setVersion(file.readByte());
         header.setChangeTimeMillis(file.readLong());
         header.setPreferenceSetCount(file.readLong());
         header.setPreferenceCount(file.readLong());
+        header.setDataSize(file.readLong());
 
-        offset = Header.SIZE;
         preferenceSetIndex = 0;
     }
 
     private void writeHeader() throws IOException {
         file.seek(0);
+
         file.write(Header.PREFIX);
+        file.writeByte(Header.VERSION);
         file.writeLong(header.getChangeTimeMillis());
         file.writeLong(header.getPreferenceSetCount());
         file.writeLong(header.getPreferenceCount());
+        file.writeLong(header.getDataSize());
 
-        offset = Header.SIZE;
         preferenceSetIndex = 0;
     }
 
-    private void writePreferenceSet(PreferenceSet preferenceSet) throws IOException {
+    private void writePreferenceSet(PreferenceSet preferenceSet, boolean isNew) throws IOException {
         file.writeLong(preferenceSet.getOwnerId());
         file.writeInt(preferenceSet.getCapacity());
-        file.writeInt(preferenceSet.getPreferenceCount());
-        long[] entityIds = preferenceSet.getEntityIds();
-        for (int i = 0; i < preferenceSet.getPreferenceCount(); i++) {
-            file.writeLong(entityIds[i]);
+        file.writeInt(preferenceSet.getEntityCount());
+        for (var entityId : preferenceSet.getEntityIds()) {
+            file.writeLong(entityId);
         }
-        if (preferenceSet.getCapacity() > preferenceSet.getPreferenceCount()) {
-            file.skipBytes(preferenceSet.getCapacity() - preferenceSet.getPreferenceCount());
+        if (isNew) {
+            for (long i = preferenceSet.getEntityCount(); i < preferenceSet.getCapacity(); i++) {
+                file.writeLong(0);
+            }
+        } else if (preferenceSet.getEntityCount() < preferenceSet.getCapacity()) {
+            file.skipBytes((preferenceSet.getCapacity() - preferenceSet.getEntityCount()) * 8);
         }
-        offset += getPreferenceSetSize(preferenceSet.getCapacity());
         preferenceSetIndex++;
     }
 
@@ -102,18 +136,18 @@ public class PreferenceFile implements PreferenceDataSource {
         if (preferenceSetIndex >= getPreferenceSetCount()) {
             return null;
         }
+        long offset = file.getFilePointer();
         long ownerId = file.readLong();
         int entityIdsCapacity = file.readInt();
         int entityIdCount = file.readInt();
-        long[] entityIds = new long[entityIdCount];
+        Set<Long> entityIds = new TreeSet<>();
         for (int j = 0; j < entityIdCount; j++) {
-            entityIds[j] = file.readLong();
+            entityIds.add(file.readLong());
         }
         if (entityIdsCapacity > entityIdCount) {
-            file.skipBytes(entityIdsCapacity - entityIdCount);
+            file.skipBytes((entityIdsCapacity - entityIdCount) * 8);
         }
         var preferenceSet = new PreferenceSet(ownerId, entityIdsCapacity, entityIds, offset);
-        offset += getPreferenceSetSize(entityIdsCapacity);
         preferenceSetIndex++;
         return preferenceSet;
     }
@@ -155,33 +189,39 @@ public class PreferenceFile implements PreferenceDataSource {
     @Override
     public void rewind() throws IOException {
         file.seek(Header.SIZE);
-        offset = Header.SIZE;
         preferenceSetIndex = 0;
     }
 
     @Override
-    public boolean tryQuickRewrite(PreferenceSet preferenceSet) throws IOException {
-        if (preferenceSet.getCapacity() < preferenceSet.getPreferenceCount()) {
+    public boolean tryQuickRewrite(PreferenceSet originalPreferenceSet,
+                                   PreferenceSet newPreferenceSet) throws IOException {
+        if (originalPreferenceSet.getCapacity() < newPreferenceSet.getEntityCount()) {
             return false;
         }
-        file.seek(file.getFilePointer());
-        writePreferenceSet(preferenceSet);
+        final long offset = file.getFilePointer();
+        file.seek(originalPreferenceSet.getOffset());
+        writePreferenceSet(newPreferenceSet, false);
         file.seek(offset);
+        header.setChangeTimeMillis(Calendar.getInstance().getTimeInMillis());
+        header.setPreferenceCount(header.getPreferenceSetCount()
+                - originalPreferenceSet.getEntityCount()
+                + newPreferenceSet.getEntityCount());
         return true;
     }
 
     @Override
     public void delete(List<PreferenceSet> preferenceSets) throws IOException {
-        var sortedSets = preferenceSets.stream()
+        final var sortedSets = preferenceSets.stream()
                 .sorted(Comparator.comparingLong(PreferenceSet::getOffset))
                 .toList();
-        long[] holeOffsets = sortedSets.stream()
+        final long[] holeOffsets = sortedSets.stream()
                 .mapToLong(PreferenceSet::getOffset)
                 .toArray();
-        long[] holeSizes = sortedSets.stream()
-                .mapToLong(ps -> getPreferenceSetSize(ps.getCapacity()))
+        final long[] holeSizes = sortedSets.stream()
+                .mapToLong(PreferenceFile::getPreferenceSetSize)
                 .toArray();
-        long fileSize = file.length();
+        final long fileSize = header.getDataSize() + Header.SIZE;
+        long totalHoleSize = 0;
         long offsetChange = 0;
         for (int i = 0; i < holeOffsets.length; i++) {
             long to = holeOffsets[i] + offsetChange;
@@ -191,13 +231,16 @@ public class PreferenceFile implements PreferenceDataSource {
                 : fileSize;
             move(to, from, end - from);
             offsetChange += to - from;
+            totalHoleSize += holeSizes[i];
         }
         // Update header
-        var deletedPreferenceCount = preferenceSets.stream()
-                .map(PreferenceSet::getPreferenceCount)
+        final var deletedPreferenceCount = preferenceSets.stream()
+                .map(PreferenceSet::getEntityCount)
                 .reduce(0, Integer::sum);
         header.setPreferenceCount(header.getPreferenceCount() - deletedPreferenceCount);
         header.setPreferenceSetCount(header.getPreferenceSetCount() - preferenceSets.size());
+        header.setChangeTimeMillis(Calendar.getInstance().getTimeInMillis());
+        header.setDataSize(header.getDataSize() - totalHoleSize);
     }
 
     /**
@@ -229,8 +272,23 @@ public class PreferenceFile implements PreferenceDataSource {
     }
 
     @Override
-    public void add(List<PreferenceSet> ownerIds) throws IOException {
-
+    public void add(List<PreferenceSet> preferenceSets) throws IOException {
+        file.seek(Header.SIZE + header.getDataSize());
+        long dataSizeChange = 0;
+        long preferenceCount = 0;
+        for (var preferenceSet : preferenceSets) {
+            if (preferenceSet.getCapacity() < preferenceSet.getEntityCount()) {
+                preferenceSet.setCapacity(getNewCapacity(preferenceSet));
+            }
+            writePreferenceSet(preferenceSet, true);
+            dataSizeChange += getPreferenceSetSize(preferenceSet);
+            preferenceCount += preferenceSet.getEntityCount();
+        }
+        // Update header
+        header.setPreferenceCount(header.getPreferenceCount() + preferenceCount);
+        header.setPreferenceSetCount(header.getPreferenceSetCount() + preferenceSets.size());
+        header.setChangeTimeMillis(Calendar.getInstance().getTimeInMillis());
+        header.setDataSize(header.getDataSize() + dataSizeChange);
     }
 
     @Override
