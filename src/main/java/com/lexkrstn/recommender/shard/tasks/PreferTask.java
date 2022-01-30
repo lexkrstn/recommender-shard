@@ -7,7 +7,7 @@ import com.lexkrstn.recommender.shard.models.Preference;
 /**
  * The task that adds a preference to a set (if it isn't there yet).
  */
-public class PreferTask extends RecommenderTask implements WithPreference {
+public class PreferTask extends AbstractTask implements WithPreference {
     private final Preference preference;
     private final PreferenceChangeBulk changeBulk;
     private boolean found = false;

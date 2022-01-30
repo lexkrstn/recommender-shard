@@ -7,7 +7,7 @@ import com.lexkrstn.recommender.shard.models.Preference;
 /**
  * The task that removes a preference from a set (if it is there yet).
  */
-public class UnpreferTask extends RecommenderTask implements WithPreference {
+public class UnpreferTask extends AbstractTask implements WithPreference {
     private Preference preference;
     private PreferenceChangeBulk changeBulk;
     private boolean affected = false;

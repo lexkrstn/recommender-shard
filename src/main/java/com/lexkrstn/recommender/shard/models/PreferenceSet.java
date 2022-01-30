@@ -7,6 +7,7 @@ import lombok.ToString;
 import java.util.Set;
 import java.util.TreeSet;
 
+// TODO: Rename ownerId -> id, PreferenceSet -> PreferenceGroup
 /**
  * Encapsulates all the items liked by a user.
  */

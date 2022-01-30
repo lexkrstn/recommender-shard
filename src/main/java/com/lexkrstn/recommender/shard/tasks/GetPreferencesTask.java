@@ -7,7 +7,7 @@ import lombok.Getter;
  * The task that finds the preference set by its owner's id.
  */
 @Getter
-public class GetPreferencesTask extends RecommenderTask {
+public class GetPreferencesTask extends AbstractTask {
     private final long ownerId;
     private PreferenceSet preferenceSet;
 

@@ -32,6 +32,5 @@ public class ApplicationConfig {
             log.error(e.toString());
             return null;
         }
-
     }
 }

@@ -24,8 +24,8 @@ public class RecommenderThread extends Thread {
     private final PreferenceDataSource dataSource;
     private final int maxRecommendTasks;
     private final PreferenceChangeBulk changeBulk;
-    private final List<RecommenderTask> tasks = new LinkedList<>();
-    private LinkedList<RecommenderTask> takenTasks = new LinkedList<>();
+    private final List<AbstractTask> tasks = new LinkedList<>();
+    private LinkedList<AbstractTask> takenTasks = new LinkedList<>();
     private boolean shouldQuit = false;
 
     public RecommenderThread(PreferenceDataSource dataSource, int maxRecommendTasks) {
@@ -48,8 +48,8 @@ public class RecommenderThread extends Thread {
                 }
                 log.debug("Taken {} tasks", takenTasks.size());
                 takenTasks = takenTasks.stream()
-                        .filter(RecommenderTask::proceedPass)
-                        .collect(Collectors.toCollection(LinkedList<RecommenderTask>::new));
+                        .filter(AbstractTask::proceedPass)
+                        .collect(Collectors.toCollection(LinkedList<AbstractTask>::new));
                 changeBulk.execute();
                 dataSource.rewind();
             }
